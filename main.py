@@ -58,7 +58,8 @@ async def word_to_pdf(file: UploadFile = File(...)):
     try:
         # libreoffice will write into cwd or specified outdir
         #subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        subprocess.run(["soffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        SOFFICE = "/usr/bin/soffice"
+        subprocess.run([SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         base = os.path.splitext(os.path.basename(path))[0] + ".pdf"
         pdf_path = os.path.join(tmp_dir, base)
         if not os.path.exists(pdf_path):
