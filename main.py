@@ -55,7 +55,17 @@ from fastapi import UploadFile, File, HTTPException
 from fastapi.responses import StreamingResponse
 import subprocess, tempfile, os, shutil
 
-SOFFICE = shutil.which("soffice") or "/usr/bin/soffice"
+import shutil
+import os
+
+SOFFICE = (
+    shutil.which("soffice")
+    or "/usr/lib/libreoffice/program/soffice"
+)
+
+if not os.path.exists(SOFFICE):
+    raise RuntimeError("LibreOffice soffice binary not found")
+
 
 @app.post("/convert/word-to-pdf")
 async def word_to_pdf(file: UploadFile = File(...)):
