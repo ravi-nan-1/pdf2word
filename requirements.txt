@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+pymupdf==1.22.5
+pdf2docx
+pdf2image
+camelot-py[cv]
+pytesseract
+pillow
+pandas
+openpyxl
+python-pptx
+pdfminer.six
+pygments
+pdfkit
+python-magic
+python-multipart  
