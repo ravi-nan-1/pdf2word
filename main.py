@@ -67,20 +67,44 @@ if not os.path.exists(SOFFICE):
     raise RuntimeError("LibreOffice soffice binary not found")
 
 
+import shutil
+import os
+
+def find_soffice():
+    candidates = [
+        shutil.which("soffice"),
+        shutil.which("libreoffice"),
+        "/usr/lib/libreoffice/program/soffice",
+        "/usr/bin/soffice",
+    ]
+
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+
+    return None
+
+
 @app.post("/convert/word-to-pdf")
 async def word_to_pdf(file: UploadFile = File(...)):
+    soffice = find_soffice()
+
+    if not soffice:
+        raise HTTPException(
+            status_code=500,
+            detail="LibreOffice not available in runtime environment"
+        )
+
     tmp_dir = tempfile.mkdtemp()
     input_path = os.path.join(tmp_dir, file.filename)
 
     try:
-        # Save uploaded file
         with open(input_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
-        # Run LibreOffice
         subprocess.run(
             [
-                SOFFICE,
+                soffice,
                 "--headless",
                 "--nologo",
                 "--nolockcheck",
@@ -93,7 +117,7 @@ async def word_to_pdf(file: UploadFile = File(...)):
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=60  # ⛔ prevents container freeze
+            timeout=60
         )
 
         pdf_name = os.path.splitext(file.filename)[0] + ".pdf"
@@ -105,23 +129,12 @@ async def word_to_pdf(file: UploadFile = File(...)):
         return StreamingResponse(
             open(pdf_path, "rb"),
             media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{pdf_name}"'
-            }
+            headers={"Content-Disposition": f'attachment; filename="{pdf_name}"'}
         )
 
-    except subprocess.TimeoutExpired:
-        raise HTTPException(504, "Conversion timed out")
-
-    except subprocess.CalledProcessError as e:
-        raise HTTPException(500, e.stderr.decode(errors="ignore"))
-
     finally:
-        # Cleanup
-        try:
-            shutil.rmtree(tmp_dir)
-        except Exception:
-            pass
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
 
 
 
