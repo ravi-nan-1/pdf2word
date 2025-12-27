@@ -50,90 +50,22 @@ async def pdf_to_word(file: UploadFile = File(...)):
         try: os.remove(path)
         except: pass
 
-# 2. Word -> PDF (libreoffice headless)
-from fastapi import UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse
-import subprocess, tempfile, os, shutil
-
-import shutil
-import os
-
-SOFFICE = (
-    shutil.which("soffice")
-    or "/usr/lib/libreoffice/program/soffice"
-)
-
-if not os.path.exists(SOFFICE):
-    raise RuntimeError("LibreOffice soffice binary not found")
-
-
-import shutil
-import os
-
-def find_soffice():
-    candidates = [
-        shutil.which("soffice"),
-        shutil.which("libreoffice"),
-        "/usr/lib/libreoffice/program/soffice",
-        "/usr/bin/soffice",
-    ]
-
-    for c in candidates:
-        if c and os.path.exists(c):
-            return c
-
-    return None
-
-
 @app.post("/convert/word-to-pdf")
 async def word_to_pdf(file: UploadFile = File(...)):
-    soffice = find_soffice()
-
-    if not soffice:
-        raise HTTPException(
-            status_code=500,
-            detail="LibreOffice not available in runtime environment"
-        )
-
+    path = save_uploadfile_tmp(file)
     tmp_dir = tempfile.mkdtemp()
-    input_path = os.path.join(tmp_dir, file.filename)
-
     try:
-        with open(input_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-
-        subprocess.run(
-            [
-                soffice,
-                "--headless",
-                "--nologo",
-                "--nolockcheck",
-                "--nodefault",
-                "--nofirststartwizard",
-                "--convert-to", "pdf",
-                "--outdir", tmp_dir,
-                input_path
-            ],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=60
-        )
-
-        pdf_name = os.path.splitext(file.filename)[0] + ".pdf"
-        pdf_path = os.path.join(tmp_dir, pdf_name)
-
+        # libreoffice will write into cwd or specified outdir
+        subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        base = os.path.splitext(os.path.basename(path))[0] + ".pdf"
+        pdf_path = os.path.join(tmp_dir, base)
         if not os.path.exists(pdf_path):
-            raise HTTPException(500, "PDF conversion failed")
-
-        return StreamingResponse(
-            open(pdf_path, "rb"),
-            media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="{pdf_name}"'}
-        )
-
+            raise HTTPException(status_code=500, detail="Conversion failed")
+        return StreamingResponse(open(pdf_path, "rb"), media_type="application/pdf",
+                                 headers={"Content-Disposition": f"attachment; filename={base}"})
     finally:
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+        try: os.remove(path)
+        except: pass
 
 
 
