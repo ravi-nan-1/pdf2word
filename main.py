@@ -55,20 +55,52 @@ async def pdf_to_word(file: UploadFile = File(...)):
 async def word_to_pdf(file: UploadFile = File(...)):
     path = save_uploadfile_tmp(file)
     tmp_dir = tempfile.mkdtemp()
+
     try:
-        # libreoffice will write into cwd or specified outdir
-        #subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         SOFFICE = "/usr/bin/soffice"
-        subprocess.run([SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path],check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+
+        result = subprocess.run(
+            [SOFFICE, "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+        if result.returncode != 0:
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": "LibreOffice failed",
+                    "stdout": result.stdout.decode(errors="ignore"),
+                    "stderr": result.stderr.decode(errors="ignore"),
+                },
+            )
+
         base = os.path.splitext(os.path.basename(path))[0] + ".pdf"
         pdf_path = os.path.join(tmp_dir, base)
+
         if not os.path.exists(pdf_path):
-            raise HTTPException(status_code=500, detail="Conversion failed")
-        return StreamingResponse(open(pdf_path, "rb"), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename={base}"})
+            return JSONResponse(
+                status_code=500,
+                content={"error": "PDF not generated", "files": os.listdir(tmp_dir)},
+            )
+
+        return StreamingResponse(
+            open(pdf_path, "rb"),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={base}"},
+        )
+
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"exception": str(e)},
+        )
     finally:
-        try: os.remove(path)
-        except: pass
+        try:
+            os.remove(path)
+        except:
+            pass
+
 
 # 3. PDF -> JPG (export each page as JPG, return zip if multiple)
 @app.post("/convert/pdf-to-jpg")
