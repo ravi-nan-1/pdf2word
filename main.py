@@ -51,39 +51,68 @@ async def pdf_to_word(file: UploadFile = File(...)):
         except: pass
 
 # 2. Word -> PDF (libreoffice headless)
+from fastapi import UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
+import subprocess, tempfile, os, shutil
+
+SOFFICE = shutil.which("soffice") or "/usr/bin/soffice"
+
 @app.post("/convert/word-to-pdf")
 async def word_to_pdf(file: UploadFile = File(...)):
-    path = save_uploadfile_tmp(file)
     tmp_dir = tempfile.mkdtemp()
-    try:
-        # libreoffice will write into cwd or specified outdir
-        #subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        SOFFICE = "/usr/bin/soffice"
+    input_path = os.path.join(tmp_dir, file.filename)
 
+    try:
+        # Save uploaded file
+        with open(input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        # Run LibreOffice
         subprocess.run(
             [
                 SOFFICE,
                 "--headless",
                 "--nologo",
+                "--nolockcheck",
+                "--nodefault",
                 "--nofirststartwizard",
                 "--convert-to", "pdf",
                 "--outdir", tmp_dir,
-                path
+                input_path
             ],
             check=True,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            timeout=60  # ⛔ prevents container freeze
         )
 
-        base = os.path.splitext(os.path.basename(path))[0] + ".pdf"
-        pdf_path = os.path.join(tmp_dir, base)
+        pdf_name = os.path.splitext(file.filename)[0] + ".pdf"
+        pdf_path = os.path.join(tmp_dir, pdf_name)
+
         if not os.path.exists(pdf_path):
-            raise HTTPException(status_code=500, detail="Conversion failed")
-        return StreamingResponse(open(pdf_path, "rb"), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename={base}"})
+            raise HTTPException(500, "PDF conversion failed")
+
+        return StreamingResponse(
+            open(pdf_path, "rb"),
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{pdf_name}"'
+            }
+        )
+
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504, "Conversion timed out")
+
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(500, e.stderr.decode(errors="ignore"))
+
     finally:
-        try: os.remove(path)
-        except: pass
+        # Cleanup
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+
 
 
 # 3. PDF -> JPG (export each page as JPG, return zip if multiple)
