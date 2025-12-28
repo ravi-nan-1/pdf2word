@@ -50,22 +50,71 @@ async def pdf_to_word(file: UploadFile = File(...)):
         try: os.remove(path)
         except: pass
 
+from fastapi import UploadFile, File, HTTPException
+from fastapi.responses import StreamingResponse
+import subprocess
+import tempfile
+import os
+import shutil
+
 @app.post("/convert/word-to-pdf")
 async def word_to_pdf(file: UploadFile = File(...)):
     path = save_uploadfile_tmp(file)
     tmp_dir = tempfile.mkdtemp()
+
     try:
-        # libreoffice will write into cwd or specified outdir
-        subprocess.run(["libreoffice", "--headless", "--convert-to", "pdf", "--outdir", tmp_dir, path], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # 🔍 Find LibreOffice binary (Railway-safe)
+        lo = (
+            shutil.which("soffice")
+            or shutil.which("libreoffice")
+            or "/usr/bin/soffice"
+            or "/usr/lib/libreoffice/program/soffice"
+        )
+
+        if not lo or not os.path.exists(lo):
+            raise HTTPException(status_code=500, detail="LibreOffice not available")
+
+        subprocess.run(
+            [
+                lo,
+                "--headless",
+                "--nologo",
+                "--nolockcheck",
+                "--nodefault",
+                "--nofirststartwizard",
+                "--convert-to", "pdf",
+                "--outdir", tmp_dir,
+                path,
+            ],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
         base = os.path.splitext(os.path.basename(path))[0] + ".pdf"
         pdf_path = os.path.join(tmp_dir, base)
+
         if not os.path.exists(pdf_path):
-            raise HTTPException(status_code=500, detail="Conversion failed")
-        return StreamingResponse(open(pdf_path, "rb"), media_type="application/pdf",
-                                 headers={"Content-Disposition": f"attachment; filename={base}"})
+            raise HTTPException(status_code=500, detail="PDF conversion failed")
+
+        return StreamingResponse(
+            open(pdf_path, "rb"),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={base}"}
+        )
+
+    except subprocess.CalledProcessError as e:
+        raise HTTPException(
+            status_code=500,
+            detail=e.stderr.decode(errors="ignore") or "LibreOffice conversion error"
+        )
+
     finally:
-        try: os.remove(path)
-        except: pass
+        try:
+            os.remove(path)
+        except:
+            pass
+
 
 
 
